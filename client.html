@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Socket.IO chat</title>
+    <link rel="stylesheet" type="text/css" href="client.css"/>
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+<!-- header -->
+<div id="header" role="banner">
+    <div id="header_bottom_left">
+        <a id="header_img" class="default_header" title>
+            <img src="/img/header_icon.png" alt="cynic" id="banner_img">
+        </a>
+    </div>
+</div>
+
+
+<div>
+    <button type="button" id="show_users_btn">show users!</button>
+    <button type="button" id="show_rooms_btn">show rooms!</button>
+</div>
+
+<div id="form_div">
+    <form id="uploadForm" enctype="multipart/form-data" action="/api/file" method="post">
+        <input type="file" name="userFile" />
+        <input type="submit" value="Upload File" name="submit">
+    </form>
+    <input type="button" id="show_files_btn" value="show Files" name="show files">
+    <input type="text" id="file_name" placeholder="File name" />
+    <input type="button" id="download_file_btn" value="download Files" name="download files">
+</div>
+<div id="rooms">
+    <input type="text" id="room_name" placeholder="room name" autocomplete="off" required/>
+    <button type="button" id="join_public_room_btn">join public!</button>
+    <input type="text" id="room_pwd" placeholder="pwd" autocomplete="off" required/>
+    <button type="button" id="join_private_room_btn">join private</button>
+    <div id="rooms_info">
+
+    </div>
+</div>
+
+<div id="user_info">
+    <input type="text" id="username" placeholder="username" autocomplete="off" required/>
+</div>
+
+<div id="owner_panel" hidden>
+    <input type="text" id="victim" placeholder="victim" autocomplete="off" required/>
+    <button type="button" id="kick_btn">kick</button>
+    <button type="button" id="ban_btn">ban</button>
+</div>
+
+<div id="private_message">
+    <input type="text" id="receiver" placeholder="receiver" autocomplete="off" required/>
+
+</div>
+<hr>
+<div id="main_content">
+    <div id="messages_container">
+        <ul id="messages"></ul>
+    </div>
+    <div id="all_files">
+        <ul id="files"></ul>
+    </div>
+
+    <!-- <div class="i">invisible</div> -->
+    <div id="new_message">
+        <input type="text" id="message_input" autocomplete="off" autofocus="autofocus" required/>
+        <!--<button type="button" id="send_btn">send</button>-->
+        <button type="button" id="send_to_room_btn">send to room</button>
+        <button type="button" id="send_to_user_btn">send private</button>
+    </div>
+
+    <div id="chatlog"></div>
+</div>
+
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.0/jquery.min.js"></script>
+<script type="text/javascript">
+    // var u = require("./user_data");
+    var socket = io.connect();
+
+    //define the data type
+    //      function User(s_id){
+    //        this.username = $('#username');
+    //        this.s_id = s_id;
+    //        this.isOwner = false;
+    //        this.inRoom = null;
+    //
+    //      }
+    function Data() {
+        this.username = null;
+        this.msg = null;
+        this.receiver = null; //just a string, no an object
+        this.room = null;
+        this.roomPwd = null;
+    }
+
+    //add msg to messages ul
+    function addMessage(d) {
+        if($('#typing').length>=1) $('#typing').remove();
+        $('<li/>').text(d.username + ": " + d.msg).appendTo($('#messages'));
+        // $('#messages_container').scrollTop();
+        // $('#messages_container').animate({ scrollTop: $('#messages_container').height() }, 1000);
+        $('#messages_container').scrollTop($('#messages_container').scrollHeight);
+    }
+
+    function typingTimerService(){
+        while($('#typing').length>=1) $('#typing').remove();
+    }
+    var typingTimer = null;
+    function addTyping(d){
+        if($('#typing').length>=1) return;
+        $('<li/>',{id:"typing"}).text(d.username + ": " + d.msg).appendTo($('#messages'));
+        if (typingTimer != undefined) clearTimeout(typingTimer);
+        typingTimer = setTimeout(typingTimerService, 2000);
+    }
+
+    function sendMsgToUser(username, receiver, pwd) {
+        var d = new Data();
+        d.username = username;
+        d.receiver = receiver;
+        d.roomPwd = (typeof pwd === 'undefined') ? null : pwd;
+        d.msg = $('#message_input').val();
+        // d.msg = $('#message_input').val(); //directly to socket so no need of receiver id
+
+        // if (d.msg = $('#message_input').val()) {
+        //   socket.emit("msg_to_user", {message:msg, "user":user});
+        // } else {
+        //   alert("need a user");
+        // }
+        /*
+         since the client just send and dont handle the error, we just emit without judge
+         */
+        socket.emit("msg_to_user", d);
+    }
+
+    /**
+     * send msg to a room
+     * @param {username} username
+     * @param {room} room will receiving the msg
+     * @param {msg} msg
+     * @param {pwd}pwd optional
+     */
+    function sendMsgToRoom(username, room, msg, pwd) {
+        var d = new Data();
+        d.username = username;
+        d.room = room;
+        d.msg = msg
+        d.roomPwd = (typeof pwd === 'undefined') ? null : pwd;
+        /*
+         since the client just send and dont handle the error, we just emit without judge
+         */
+        socket.emit("msg_to_room", d);
+
+    }
+
+    function sendMessage(msg) {
+        if (msg) {
+            //just emit and let the server decide
+            socket.emit("message_to_server", {message: msg});
+        }
+        // return false;
+    }
+
+    function handleCommand(c) {
+        switch (c.command) {
+            case "be_member":
+                $('#owner_panel').hide();
+                break;
+            case "be_owner":
+//                console.log("you are the owner now");
+//                console.log(c.detail);
+                $('#owner_panel').show();
+                break;
+            case "refresh_rooms":
+                console.log(c.detail);
+                break;
+            case "refresh_users":
+                console.log(c.detail);
+                break;
+            default:
+                console.log("default");
+                break;
+        }
+    }
+
+    socket.on("message_to_client", function (data) {
+        //Append an HR thematic break and the escaped HTML of the new message
+        $('<li/>').text(data['message']).appendTo($('#messages'));
+    });
+
+    $(document).ready(function () {
+
+        // try to scroll to bottom of the msg
+        var msg_c = $('#messages_container');
+        msg_c.css("margin-bottom", function () {
+            return $('#new_message').outerHeight()
+        });
+
+        //bind pressing enter to msg inout field
+        var msg_input = $('#message_input');
+        msg_input.keypress(function (e) {
+
+            if (e.keyCode == 13 && msg_input.val()) {
+//                sendMessage(msg_input.val());
+                sendMsgToRoom(username, $('#room_name').val(), "knock, knock!", $('#room_pwd').val())
+                msg_input.val(null);
+                msg_c.animate({scrollTop: msg_c.prop("scrollHeight") - msg_c.height()}, 3000)
+                // $('#messages_container').scrollTop($('#messages_container').scrollHeight);
+            }
+        });
+        /**
+         * TODO when to init this vars?
+         **/
+        var username;
+        var room;
+        var pwd;
+        var isGood;
+        /*
+         join a public room,
+         if there is no such room, one will be created
+
+         join is just join, whether success or fail we let the server determine
+         */
+        $('#join_public_room_btn').click(function () {
+            room = $('#room_name').val();
+            username = $('#username').val();
+            if (!room) {
+                addMessage({username: "local", msg: "need a room"});
+            } else if (!username) {
+                addMessage({username: "local", msg: "need a username"});
+            } else {
+//                console.log({username: username, room: room});
+                socket.emit("join_public", {username: username, room: room});
+                isGood = true;
+            }
+        });
+
+        /**
+         * *try* to join a private
+         **/
+        $('#join_private_room_btn').click(function () {
+            room = $('#room_name').val();
+            username = $('#username').val();
+            pwd = $('#room_pwd').val();
+            if (!room) {
+                addMessage({username: "local", msg: "need a room"});
+            } else if (!username) {
+                addMessage({username: "local", msg: "need a username"});
+            } else if (!pwd) {
+                addMessage({username: "local", msg: "need a pwd"});
+            } else {
+                console.log("joining private");
+                socket.emit("join_private", {username: username, room: room, pwd: pwd});
+                isGood = true;
+            }
+        });
+
+        //TODO
+        // I fell this way of using callback looks so dumb
+        // should be a better way, but just leave it that way now
+        $('#send_to_room_btn').click(function () {
+            if (isGood) {
+                sendMsgToRoom(username, room, $('#message_input').val(), $('#room_pwd').val());
+            } else {
+                addMessage({username: "local", msg: "need a username/room/password"});
+            }
+        });
+
+        /**
+         * use {string}username to find a socket
+         **/
+        $('#send_to_user_btn').click(function () {
+            var r = $('#receiver').val();
+            if (isGood && r) {
+                sendMsgToUser(username, r, $('#room_pwd').val());
+            }
+        });
+        $('#kick_btn').click(function () {
+            var v = $('#victim').val();
+            if(v){
+                socket.emit("kick_victim",{victim:v});
+            }
+        });
+        $('#ban_btn').click(function () {
+            var v = $('#victim').val();
+            if(v){
+                socket.emit("ban_victim",{victim:v});
+            }
+        });
+
+        $('#show_files_btn').click(function () {
+            socket.emit("show_files");
+        });
+
+        $('#show_users_btn').click(function () {
+            socket.emit("show_users");
+        });
+
+        $('#show_rooms_btn').click(function () {
+            socket.emit("show_rooms");
+        });
+
+        $('#download_file_btn').click(function () {
+//            console.log("localhost:8000/uploaded_files/"+$('#file_name').val());
+            window.open("localhost:8000/uploaded_files/"+$('#file_name').val());
+//            var childWindow = window.open("localhost:8000/uploaded_files/"+$('#file_name').val());
+//            childWindow.location.reload();
+        });
+
+        //TODO send msg to server telling he's typing
+        $('#message_input').keypress(function() {
+            if($('#typing').length<=1) socket.emit("user_typing",{msg: " is typing"});
+        });
+
+        /**
+         * handle the msg from server
+         **/
+        socket.on('broadcast', function (d) {
+            addMessage(d);
+        });
+        socket.on('msg_from_server', function (d) {
+            addMessage(d);
+        });
+
+        socket.on('kick_yourself', function (d) {
+            socket.emit("kick_myself_ack");
+            addMessage(d);
+        });
+
+        socket.on('sys_kick', function (d) {
+            if(d.victim==$('#username').val()){
+                socket.emit("kick_myself_ack", {victim:$('#victim').val()});
+            }
+            addMessage(d);
+        });
+
+        socket.on('sys_ban', function (d) {
+            if(d.victim==$('#username').val()){
+                socket.emit("kick_myself_ack", {victim:$('#victim').val()});
+            }
+            addMessage(d);
+        });
+        /**
+         * handle all kinds of error
+         * no room, no user, banned, kicked, etc.
+         **/
+        socket.on('error', function (err) {
+            addMessage('error: ' + err);
+        });
+
+        socket.on('cmd_from_server', function (c) {
+            handleCommand(c);
+        });
+
+        socket.on('user_typing', function (d) {
+            addTyping(d);
+        });
+
+    });
+
+
+</script>
+</body>
+</html>

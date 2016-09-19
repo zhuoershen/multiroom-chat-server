@@ -1,0 +1,14 @@
+Group numbers:
+	Dake Lu 445781
+	Zhueor Shen 445164
+
+Link:
+	http://54.68.72.28:8000/
+
+Description:
+	1. upload file to server
+		we can also download but we have to refresh the page after entering the correct file name
+	2. when the room owner disconencted, every one is disconencted
+	3. detect when a user is typing
+	
+
